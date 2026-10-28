@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conversor Pro Excel a Maps.Me — DescriptionField</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- SheetJS (Excel y CSV) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- JSZip (Compresión KMZ) -->
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+    <!-- MapLibre GL JS & CSS -->
+    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+    <!-- SweetAlert2 -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            background-image:
+                linear-gradient(rgba(8, 15, 28, 0.84), rgba(8, 15, 28, 0.91)),
+                url('https://images.unsplash.com/photo-1473341304170-971ecd998e1f?auto=format&fit=crop&w=2200&q=85');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            background-repeat: no-repeat;
+        }
+        #map { width: 100%; height: 450px; border-radius: 0.75rem; }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen p-4 sm:p-8">
+
+    <div class="max-w-6xl mx-auto bg-slate-800 shadow-2xl rounded-2xl overflow-hidden border border-slate-700">
+        <!-- Encabezado Oficial -->
+        <div class="bg-gradient-to-r from-emerald-600 to-teal-700 px-6 py-6 text-white flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+                <h1 class="text-xl sm:text-2xl font-bold">
+                    Conversor Pro de Excel a Maps.Me
+                </h1>
+                <p class="text-emerald-100 text-xs sm:text-sm mt-1">
+                    Convierte Excel en KMZ con categorías, colores y detalles personalizados (DescriptionField)
+                </p>
+            </div>
+            <div class="bg-emerald-800/80 border border-emerald-400/40 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap">
+                By Juan Kunz
+            </div>
+        </div>
+
+        <div class="p-6 sm:p-8 space-y-8">
+            <!-- PASO 1: Carga de Archivo Excel -->
+            <div class="space-y-3">
+                <label class="block text-sm font-semibold text-slate-300">1. Cargar Archivo Excel (.xlsx, .xls) o CSV</label>
+                <div class="border-2 border-dashed border-slate-600 rounded-xl p-6 text-center hover:border-emerald-500 transition-colors bg-slate-900/50 cursor-pointer" onclick="document.getElementById('fileInput').click()">
+                    <input type="file" id="fileInput" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleFileUpload(event)">
+                    <div class="flex flex-col items-center space-y-2">
+                        <span class="text-4xl">📊</span>
+                        <span class="text-sm font-medium text-slate-200" id="fileNameLabel">Haz clic para seleccionar tu planilla Excel o arrástrala aquí</span>
+                        <span class="text-xs text-slate-400">Soporta coordenadas decimales y formatos geográficos (DMS / Cardinales)</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PASO 2: Selección de Campos y Columna a Categorizar -->
+            <div id="step2" class="space-y-4 hidden border-t border-slate-700 pt-6">
+                <h2 class="text-lg font-semibold text-slate-200">2. Mapeo de Campos y Columna a Categorizar</h2>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Nombre / Identificador</label>
+                        <select id="colName" onchange="onDetailsChanged()" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none"></select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Latitud (Y)</label>
+                        <select id="colLat" onchange="onDetailsChanged()" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none"></select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Longitud (X)</label>
+                        <select id="colLon" onchange="onDetailsChanged()" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none"></select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Columna a Categorizar</label>
+                        <select id="colCategory" onchange="buildColorTable(); onDetailsChanged()" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none"></select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PASO 3: Elección de campos que componen DescriptionField -->
+            <section id="stepDetails" class="space-y-4 hidden border-t border-slate-700 pt-6" aria-labelledby="detailsHeading">
+                <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+                    <div>
+                        <h2 id="detailsHeading" class="text-lg font-semibold text-slate-200">3. Configurar el detalle del punto (DescriptionField)</h2>
+                        <p class="text-xs text-slate-400 mt-1">Elige qué columnas del Excel se verán al abrir cada punto del KMZ en Maps.me, Google Earth o QGIS. Los campos no seleccionados no se incluirán como detalles.</p>
+                    </div>
+                    <span id="detailCount" class="text-xs text-emerald-300 font-semibold whitespace-nowrap">0 campos seleccionados</span>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div class="bg-slate-900/80 rounded-xl border border-slate-700 p-4 space-y-3">
+                        <div class="flex flex-wrap gap-2">
+                            <button type="button" onclick="chooseAllDetails(true)" class="bg-slate-700 hover:bg-slate-600 rounded-lg px-3 py-2 text-xs font-semibold">Seleccionar todos</button>
+                            <button type="button" onclick="chooseAllDetails(false)" class="bg-slate-700 hover:bg-slate-600 rounded-lg px-3 py-2 text-xs font-semibold">Quitar todos</button>
+                            <button type="button" onclick="selectSuggestedDetails()" class="bg-slate-700 hover:bg-slate-600 rounded-lg px-3 py-2 text-xs font-semibold">Restablecer sugeridos</button>
+                        </div>
+                        <div id="detailFieldList" class="max-h-72 overflow-y-auto space-y-1 pr-1" role="group" aria-label="Campos a incluir en el detalle"></div>
+                        <p class="text-xs text-slate-400">Usa las flechas ↑ ↓ para cambiar el orden. La columna seleccionada como nombre seguirá siendo el título del marcador. Las coordenadas se exportan siempre para ubicarlo.</p>
+                        <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                            <input id="includeEmptyDetails" type="checkbox" onchange="onDetailsChanged()" class="accent-emerald-500 w-4 h-4">
+                            Mostrar también campos sin datos (como «Sin dato»)
+                        </label>
+                    </div>
+                    <div class="bg-slate-900/80 rounded-xl border border-slate-700 p-4 space-y-3">
+                        <div class="flex items-center justify-between gap-2">
+                            <h3 class="text-sm font-semibold text-slate-200">Vista previa de DescriptionField</h3>
+                            <span class="text-xs text-slate-500">Primer registro con coordenadas válidas</span>
+                        </div>
+                        <div id="detailPreview" class="bg-slate-800/60 border border-slate-700 rounded-lg p-4 text-sm text-slate-200 whitespace-pre-wrap break-words min-h-40 max-h-72 overflow-y-auto" aria-live="polite">Carga un Excel para visualizar los detalles.</div>
+                        <p class="text-xs text-slate-400">Estos mismos campos se guardarán en la etiqueta KML &lt;description&gt; y en ExtendedData, incluido <strong>DescriptionField</strong>.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- PASO 4: Asignación Masiva de Colores (Maps.me) -->
+            <div id="step3" class="space-y-4 hidden border-t border-slate-700 pt-6">
+                <div class="flex items-center justify-between flex-wrap gap-2">
+                    <h2 class="text-lg font-semibold text-slate-200">4. Asignación Masiva de Colores por Sub-categoría</h2>
+                    <span class="text-xs bg-emerald-900/60 text-emerald-300 border border-emerald-700/50 px-3 py-1 rounded-full font-medium">Homologación Nativa Maps.me</span>
+                </div>
+                <div class="bg-slate-900 rounded-xl p-4 border border-slate-700 overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="border-b border-slate-700 text-xs font-semibold text-slate-400 uppercase">
+                                <th class="pb-3 px-2">Sub-categoría (Valor)</th>
+                                <th class="pb-3 px-2">Recuento Único</th>
+                                <th class="pb-3 px-2">Color Marcador Maps.me</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mappingTableBody" class="divide-y divide-slate-700/50 text-sm"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- PASO 5: Mapa Interactivo -->
+            <div id="step4" class="space-y-4 hidden border-t border-slate-700 pt-6">
+                <div class="flex items-center justify-between flex-wrap gap-4">
+                    <div>
+                        <h2 class="text-lg font-semibold text-slate-200">5. Mapa de Previsualización Interactivo</h2>
+                        <p class="text-xs text-slate-400">MapLibre | OpenFreeMap @ OpenMapTiles Data from OpenStreetMap</p>
+                    </div>
+                    <div id="statsBadge" class="flex gap-2 text-xs font-medium"></div>
+                </div>
+
+                <div class="flex items-center gap-3 bg-slate-900 p-3 rounded-xl border border-slate-700">
+                    <label class="text-xs font-semibold text-slate-400 uppercase">Filtrar por Sub-categoría:</label>
+                    <select id="subCategoryFilter" onchange="applyFilter()" class="bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none max-w-xs">
+                        <option value="ALL">-- Mostrar Todas --</option>
+                    </select>
+                </div>
+
+                <p class="text-xs text-slate-400">El filtro afecta solo la vista del mapa; el KMZ exporta todos los registros con coordenadas válidas.</p>
+                <div id="map"></div>
+
+                <!-- Botón de Exportación -->
+                <div class="flex justify-end pt-4">
+                    <button onclick="generateKMZ()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-8 py-3.5 rounded-xl shadow-lg shadow-emerald-900/40 transition-all flex items-center gap-2 cursor-pointer text-sm">
+                        📲 Descargar KMZ Homologado para Maps.me / WhatsApp
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let rawData = [];
+        let headers = [];
+        let mapInstance = null;
+        let mapMarkers = [];
+        // Mantiene el orden mostrado en DescriptionField y los campos marcados por el usuario.
+        let detailFieldOrder = [];
+        let selectedDetailFields = new Set();
+
+        // Paleta exacta homologada con IDs y códigos KML nativos compatibles con Maps.me
+        const mapsMeColors = [
+            { id: 'orange', name: '🟠 Naranjo', hex: '#FF9600', kmlColor: 'FF0096FF' },
+            { id: 'blue', name: '🔵 Azul', hex: '#0066CC', kmlColor: 'FFCC6600' },
+            { id: 'green', name: '🟢 Verde', hex: '#3C8C3C', kmlColor: 'FF3C8C3C' },
+            { id: 'red', name: '🔴 Rojo', hex: '#E51B23', kmlColor: 'FF231BE5' },
+            { id: 'yellow', name: '🟡 Amarillo', hex: '#FFC800', kmlColor: 'FF00C8FF' },
+            { id: 'purple', name: '🟣 Morado', hex: '#9B24B2', kmlColor: 'FFB2249B' },
+            { id: 'pink', name: '🩷 Rosado', hex: '#FF4182', kmlColor: 'FF8241FF' },
+            { id: 'brown', name: '🟤 Café / Marrón', hex: '#804633', kmlColor: 'FF334680' },
+            { id: 'teal', name: '🟦 Teal', hex: '#00A58C', kmlColor: 'FF8CA500' },
+            { id: 'cyan', name: '🟦 Cian', hex: '#14BECD', kmlColor: 'FFCDBE14' },
+            { id: 'lightblue', name: '🩵 Celeste', hex: '#249CF2', kmlColor: 'FFF29C24' },
+            { id: 'lime', name: '🟢 Lima', hex: '#93BF39', kmlColor: 'FF39BF93' },
+            { id: 'gray', name: '🔘 Gris', hex: '#737373', kmlColor: 'FF737373' },
+            { id: 'bluegray', name: '🔘 Gris Azulado', hex: '#597380', kmlColor: 'FF807359' }
+        ];
+
+        function parseCoordinate(val) {
+            if (val === null || val === undefined) return NaN;
+            if (typeof val === 'number') return val;
+
+            let str = String(val).trim();
+            if (!str) return NaN;
+
+            const isNegative = str.toUpperCase().includes('S') || str.toUpperCase().includes('W') || str.startsWith('-');
+            let cleaned = str.replace(/[NSEWnsew]/g, '').trim();
+
+            if (cleaned.includes('°') || cleaned.includes("'") || cleaned.includes('"')) {
+                cleaned = cleaned.replace(/[°'"]/g, ' ').replace(/\s+/g, ' ').trim();
+                const parts = cleaned.split(' ').map(Number);
+                if (parts.length >= 1 && !isNaN(parts[0])) {
+                    let deg = Math.abs(parts[0]);
+                    let min = parts.length > 1 && !isNaN(parts[1]) ? parts[1] / 60 : 0;
+                    let sec = parts.length > 2 && !isNaN(parts[2]) ? parts[2] / 3600 : 0;
+                    let total = deg + min + sec;
+                    return isNegative ? -total : total;
+                }
+            }
+
+            cleaned = cleaned.replace(/-/g, '');
+            if (cleaned.includes(',') && !cleaned.includes('.')) {
+                cleaned = cleaned.replace(',', '.');
+            } else if (cleaned.includes(',') && cleaned.includes('.')) {
+                if (cleaned.indexOf(',') > cleaned.lastIndexOf('.')) {
+                    cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+                } else {
+                    cleaned = cleaned.replace(/,/g, '');
+                }
+            }
+
+            const num = parseFloat(cleaned);
+            return isNaN(num) ? NaN : (isNegative ? -num : num);
+        }
+
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            document.getElementById('fileNameLabel').textContent = file.name;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const sheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[sheetName];
+
+                    rawData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+
+                    if (rawData.length === 0) {
+                        Swal.fire('Atención', 'El archivo no contiene datos.', 'warning');
+                        return;
+                    }
+
+                    headers = Object.keys(rawData[0]);
+                    populateDropdowns();
+
+                    Swal.fire({
+                        title: '¡Carga Exitosa!',
+                        text: `Se han procesado ${rawData.length} registros del archivo Excel.`,
+                        icon: 'success',
+                        confirmColor: '#059669'
+                    });
+
+                    document.getElementById('step2').classList.remove('hidden');
+                    document.getElementById('stepDetails').classList.remove('hidden');
+                    document.getElementById('step3').classList.remove('hidden');
+                    document.getElementById('step4').classList.remove('hidden');
+
+                    initMap();
+                    updateAll();
+                } catch (err) {
+                    Swal.fire('Error', 'No se pudo procesar la planilla Excel.', 'error');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function populateDropdowns() {
+            ['colName', 'colLat', 'colLon', 'colCategory'].forEach(id => {
+                const sel = document.getElementById(id);
+                sel.innerHTML = '';
+                headers.forEach(h => {
+                    const opt = document.createElement('option');
+                    opt.value = h;
+                    opt.textContent = h;
+                    sel.appendChild(opt);
+                });
+            });
+
+            autoSelect('colName', ['nombre', 'name', 'titulo', 'id', 'punto', 'etiqueta']);
+            autoSelect('colLat', ['lat', 'latitud', 'latitude', 'y', 'lat_dec']);
+            autoSelect('colLon', ['lon', 'long', 'longitud', 'longitude', 'x', 'lon_dec']);
+            autoSelect('colCategory', ['categoria', 'category', 'tipo', 'estado', 'color', 'grupo', 'delegacion']);
+            detailFieldOrder = [...headers];
+            selectSuggestedDetails();
+            buildColorTable();
+        }
+
+        function selectSuggestedDetails() {
+            // De inicio muestra la categoría y otros atributos útiles, sin repetir coordenadas o identificador.
+            const excluded = new Set(['colName', 'colLat', 'colLon'].map(id => document.getElementById(id).value));
+            const category = document.getElementById('colCategory').value;
+            const recommended = detailFieldOrder.filter(h => !excluded.has(h));
+            selectedDetailFields = new Set([category, ...recommended].filter(Boolean).slice(0, 5));
+            renderDetailSelectors();
+            onDetailsChanged();
+        }
+
+        function chooseAllDetails(enabled) {
+            selectedDetailFields = new Set(enabled ? detailFieldOrder : []);
+            renderDetailSelectors();
+            onDetailsChanged();
+        }
+
+        function moveDetailField(field, direction) {
+            const from = detailFieldOrder.indexOf(field);
+            const to = from + direction;
+            if (from < 0 || to < 0 || to >= detailFieldOrder.length) return;
+            [detailFieldOrder[from], detailFieldOrder[to]] = [detailFieldOrder[to], detailFieldOrder[from]];
+            renderDetailSelectors();
+            onDetailsChanged();
+        }
+
+        function renderDetailSelectors() {
+            const container = document.getElementById('detailFieldList');
+            container.replaceChildren();
+            detailFieldOrder.forEach((field, index) => {
+                const item = document.createElement('div');
+                item.className = 'flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-800';
+                const label = document.createElement('label');
+                label.className = 'flex min-w-0 flex-1 items-center gap-2 cursor-pointer text-sm';
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'detail-checkbox w-4 h-4 shrink-0 accent-emerald-500';
+                checkbox.checked = selectedDetailFields.has(field);
+                checkbox.value = field;
+                checkbox.addEventListener('change', () => {
+                    if (checkbox.checked) selectedDetailFields.add(field);
+                    else selectedDetailFields.delete(field);
+                    onDetailsChanged();
+                });
+                const name = document.createElement('span');
+                name.className = 'truncate text-slate-200';
+                name.textContent = field;
+                name.title = field;
+                label.append(checkbox, name);
+                item.appendChild(label);
+                [-1, 1].forEach(direction => {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.textContent = direction === -1 ? '↑' : '↓';
+                    btn.title = direction === -1 ? 'Subir campo' : 'Bajar campo';
+                    btn.setAttribute('aria-label', `${btn.title}: ${field}`);
+                    btn.disabled = direction === -1 ? index === 0 : index === detailFieldOrder.length - 1;
+                    btn.className = 'px-2 py-0.5 rounded text-slate-300 bg-slate-800 hover:bg-slate-700 disabled:opacity-25 disabled:cursor-not-allowed';
+                    btn.addEventListener('click', () => moveDetailField(field, direction));
+                    item.appendChild(btn);
+                });
+                container.appendChild(item);
+            });
+        }
+
+        function getSelectedDetails() {
+            return detailFieldOrder.filter(h => selectedDetailFields.has(h));
+        }
+
+        function cleanXmlText(value) {
+            // XML 1.0: evita caracteres de control no admitidos en KML.
+            return String(value ?? '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '');
+        }
+
+        function escapeXml(value) {
+            return cleanXmlText(value).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+        }
+
+        function safeCdata(value) {
+            // ]]> no puede aparecer dentro de un bloque CDATA: se divide en dos bloques.
+            return '<![CDATA[' + cleanXmlText(value).replace(/]]>/g, ']]]]><![CDATA[>') + ']]>';
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        function getDetailEntries(row) {
+            const includeEmpty = document.getElementById('includeEmptyDetails').checked;
+            return getSelectedDetails().map(field => ({
+                field,
+                value: String(row[field] ?? '').trim()
+            })).filter(entry => includeEmpty || entry.value !== '')
+                .map(entry => ({ ...entry, value: entry.value || 'Sin dato' }));
+        }
+
+        function getDescriptionText(row) {
+            return getDetailEntries(row).map(entry => `${entry.field}: ${entry.value}`).join('\n');
+        }
+
+        function isValidCoordinates(lat, lon) {
+            return Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
+        }
+
+        function updateDetailPreview() {
+            const preview = document.getElementById('detailPreview');
+            const nameField = document.getElementById('colName').value;
+            const latField = document.getElementById('colLat').value;
+            const lonField = document.getElementById('colLon').value;
+            const row = rawData.find(r => isValidCoordinates(parseCoordinate(r[latField]), parseCoordinate(r[lonField])));
+            if (!row) {
+                preview.textContent = 'No hay registros con coordenadas válidas para previsualizar.';
+                return;
+            }
+            const title = String(row[nameField] ?? '').trim() || 'Punto sin nombre';
+            const description = getDescriptionText(row);
+            preview.textContent = `${title}\n\n${description || '(Sin campos de detalle seleccionados o sin datos)'}`;
+        }
+
+        function onDetailsChanged() {
+            const count = getSelectedDetails().length;
+            document.getElementById('detailCount').textContent = `${count} campo${count === 1 ? '' : 's'} seleccionado${count === 1 ? '' : 's'}`;
+            updateDetailPreview();
+            updateAll();
+        }
+
+        function autoSelect(id, matches) {
+            const sel = document.getElementById(id);
+            const normalize = value => String(value ?? '').normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+            // Se prioriza el orden de coincidencias, sin depender del orden de columnas.
+            for (const match of matches) {
+                const option = [...sel.options].find(opt => normalize(opt.value) === normalize(match));
+                if (option) {
+                    sel.value = option.value;
+                    break;
+                }
+            }
+        }
+
+        function buildColorTable() {
+            const catCol = document.getElementById('colCategory').value;
+            if (!catCol) return;
+            const previousColors = new Map([...document.querySelectorAll('.color-select')].map(sel => [sel.dataset.subcat, sel.value]));
+            const counts = new Map();
+            rawData.forEach(row => {
+                const val = String(row[catCol] ?? '').trim() || 'Sin Categoría';
+                counts.set(val, (counts.get(val) || 0) + 1);
+            });
+
+            const uniqueVals = [...counts.keys()].sort((a, b) => a.localeCompare(b, 'es'));
+            const tbody = document.getElementById('mappingTableBody');
+            tbody.replaceChildren();
+            const filterSel = document.getElementById('subCategoryFilter');
+            filterSel.innerHTML = '<option value="ALL">-- Mostrar Todas --</option>';
+
+            uniqueVals.forEach((val, idx) => {
+                let defaultColor = 'orange';
+                const lower = val.toLowerCase();
+                if (lower.includes('vegetación')) defaultColor = 'orange';
+                else if (lower.includes('general')) defaultColor = 'blue';
+                else if (lower.includes('sin categoría') || lower.includes('sin categoria')) defaultColor = 'green';
+                else defaultColor = mapsMeColors[idx % mapsMeColors.length].id;
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-800/50';
+                const nameCell = document.createElement('td');
+                nameCell.className = 'py-3 px-2 font-medium text-slate-200';
+                nameCell.textContent = val;
+                const countCell = document.createElement('td');
+                countCell.className = 'py-3 px-2 text-slate-400 font-mono';
+                countCell.textContent = counts.get(val);
+                const colorCell = document.createElement('td');
+                colorCell.className = 'py-3 px-2';
+                const sel = document.createElement('select');
+                sel.dataset.subcat = val;
+                sel.className = 'color-select bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 outline-none w-full sm:w-64';
+                mapsMeColors.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.textContent = c.name;
+                    sel.appendChild(opt);
+                });
+                sel.value = previousColors.get(val) || defaultColor;
+                sel.addEventListener('change', updateAll);
+                colorCell.appendChild(sel);
+                tr.append(nameCell, countCell, colorCell);
+                tbody.appendChild(tr);
+
+                const filterOpt = document.createElement('option');
+                filterOpt.value = val;
+                filterOpt.textContent = `${val} (${counts.get(val)})`;
+                filterSel.appendChild(filterOpt);
+            });
+            updateAll();
+        }
+
+        function initMap() {
+            if (mapInstance) return;
+
+            mapInstance = new maplibregl.Map({
+                container: 'map',
+                style: 'https://tiles.openfreemap.org/styles/bright',
+                center: [-71.5, -33.5],
+                zoom: 5
+            });
+
+            mapInstance.addControl(new maplibregl.NavigationControl(), 'top-right');
+        }
+
+        function updateAll() {
+            if (!mapInstance) return;
+            mapMarkers.forEach(marker => marker.remove());
+            mapMarkers = [];
+            const nameCol = document.getElementById('colName').value;
+            const latCol = document.getElementById('colLat').value;
+            const lonCol = document.getElementById('colLon').value;
+            const catCol = document.getElementById('colCategory').value;
+            const selectedFilter = document.getElementById('subCategoryFilter').value;
+            const colorMapping = new Map([...document.querySelectorAll('.color-select')].map(sel => [sel.dataset.subcat, sel.value]));
+            const bounds = new maplibregl.LngLatBounds();
+            let validCount = 0;
+
+            rawData.forEach((row, idx) => {
+                const name = String(row[nameCol] ?? '').trim() || `Punto ${idx + 1}`;
+                const lat = parseCoordinate(row[latCol]);
+                const lon = parseCoordinate(row[lonCol]);
+                const subCat = String(row[catCol] ?? '').trim() || 'Sin Categoría';
+                if (!isValidCoordinates(lat, lon)) return;
+                validCount++;
+                if (selectedFilter !== 'ALL' && subCat !== selectedFilter) return;
+                const colorId = colorMapping.get(subCat) || 'orange';
+                const colorObj = mapsMeColors.find(c => c.id === colorId) || mapsMeColors[0];
+                const el = document.createElement('div');
+                el.className = 'w-5 h-5 rounded-full border-2 border-white shadow-md cursor-pointer';
+                el.style.backgroundColor = colorObj.hex;
+                const detailHtml = getDetailEntries(row).map(entry =>
+                    `<div class="text-xs mt-1"><strong>${escapeHtml(entry.field)}:</strong> ${escapeHtml(entry.value)}</div>`
+                ).join('');
+                const popup = new maplibregl.Popup({ offset: 10 }).setHTML(`
+                    <div class="text-slate-900 p-1 max-h-60 overflow-y-auto" style="min-width:160px">
+                        <strong class="text-sm block">${escapeHtml(name)}</strong>
+                        ${detailHtml || '<span class="text-xs text-slate-500">Sin detalle seleccionado</span>'}
+                        <span class="text-[10px] font-mono text-slate-500 block mt-2">${lat.toFixed(5)}, ${lon.toFixed(5)}</span>
+                    </div>
+                `);
+                const marker = new maplibregl.Marker({ element: el })
+                    .setLngLat([lon, lat]).setPopup(popup).addTo(mapInstance);
+                mapMarkers.push(marker);
+                bounds.extend([lon, lat]);
+            });
+
+            document.getElementById('statsBadge').innerHTML = `
+                <span class="bg-emerald-900/60 text-emerald-300 border border-emerald-700/50 px-3 py-1 rounded-full">Puntos Válidos: ${validCount}</span>
+                <span class="bg-slate-800 text-slate-300 border border-slate-700 px-3 py-1 rounded-full">Visibles: ${mapMarkers.length}</span>
+            `;
+            if (mapMarkers.length) mapInstance.fitBounds(bounds, { padding: 40, maxZoom: 14 });
+        }
+
+        function applyFilter() {
+            updateAll();
+        }
+
+        // GENERACIÓN KMZ: estilo nativo de Maps.me, description y ExtendedData con los campos elegidos.
+        async function generateKMZ() {
+            const nameCol = document.getElementById('colName').value;
+            const latCol = document.getElementById('colLat').value;
+            const lonCol = document.getElementById('colLon').value;
+            const catCol = document.getElementById('colCategory').value;
+            const colorMapping = new Map([...document.querySelectorAll('.color-select')].map(sel => [sel.dataset.subcat, sel.value]));
+
+            const groups = new Map();
+            rawData.forEach((row, idx) => {
+                const lat = parseCoordinate(row[latCol]);
+                const lon = parseCoordinate(row[lonCol]);
+                if (!isValidCoordinates(lat, lon)) return;
+                const subCat = String(row[catCol] ?? '').trim() || 'Sin Categoría';
+                if (!groups.has(subCat)) groups.set(subCat, []);
+                groups.get(subCat).push({ row, idx, lat, lon });
+            });
+            const totalExported = [...groups.values()].reduce((n, entries) => n + entries.length, 0);
+            if (!totalExported) {
+                Swal.fire('Atención', 'No hay coordenadas válidas para exportar.', 'warning');
+                return;
+            }
+
+            const kml = ['<?xml version="1.0" encoding="UTF-8"?>'];
+            kml.push('<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:mwm="http://mapswith.me/schemas/kml/v1">');
+            kml.push('  <Document>');
+            kml.push('    <name>Conversor Pro de Excel a Maps.Me</name>');
+            const usedColors = new Set([...groups.keys()].map(group => colorMapping.get(group) || 'orange'));
+            usedColors.forEach(colorId => {
+                const c = mapsMeColors.find(color => color.id === colorId) || mapsMeColors[0];
+                kml.push(`    <Style id="placemark-${c.id}">`);
+                kml.push('      <IconStyle>');
+                kml.push(`        <color>${c.kmlColor}</color>`);
+                kml.push('        <Icon>');
+                kml.push(`          <href>https://omaps.app/placemarks/placemark-${c.id}.png</href>`);
+                kml.push('        </Icon>');
+                kml.push('      </IconStyle>');
+                kml.push('    </Style>');
+            });
+
+            groups.forEach((items, subCat) => {
+                const colorId = colorMapping.get(subCat) || 'orange';
+                const c = mapsMeColors.find(color => color.id === colorId) || mapsMeColors[0];
+                kml.push('    <Folder>');
+                kml.push(`      <name>${safeCdata(subCat)}</name>`);
+                items.forEach(item => {
+                    const name = String(item.row[nameCol] ?? '').trim() || `Punto ${item.idx + 1}`;
+                    const description = getDescriptionText(item.row);
+                    kml.push('      <Placemark>');
+                    kml.push(`        <name>${safeCdata(name)}</name>`);
+                    // Campo de descripción visible al abrir el punto en lectores KML/KMZ.
+                    kml.push(`        <description>${safeCdata(description)}</description>`);
+                    kml.push(`        <styleUrl>#placemark-${c.id}</styleUrl>`);
+                    kml.push('        <ExtendedData>');
+                    kml.push(`          <mwm:iconName>placemark-${c.id}</mwm:iconName>`);
+                    kml.push(`          <mwm:color>${c.kmlColor}</mwm:color>`);
+                    // Se conserva DescriptionField como campo explícito, además del elemento KML description.
+                    kml.push(`          <Data name="DescriptionField"><value>${escapeXml(description)}</value></Data>`);
+                    getDetailEntries(item.row).forEach(entry => {
+                        // Los atributos seleccionados también se podrán inspeccionar individualmente en GIS.
+                        // Evita repetir DescriptionField si ya es un encabezado del Excel.
+                        if (entry.field === 'DescriptionField') return;
+                        kml.push(`          <Data name="${escapeXml(entry.field)}"><value>${escapeXml(entry.value)}</value></Data>`);
+                    });
+                    kml.push('        </ExtendedData>');
+                    kml.push('        <Point>');
+                    kml.push(`          <coordinates>${item.lon},${item.lat},0</coordinates>`);
+                    kml.push('        </Point>');
+                    kml.push('      </Placemark>');
+                });
+                kml.push('    </Folder>');
+            });
+            kml.push('  </Document>');
+            kml.push('</kml>');
+            const kmlString = kml.join('\n');
+            try {
+                const zip = new JSZip();
+                zip.file('doc.kml', kmlString);
+                const blob = await zip.generateAsync({ type: 'blob' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const categoryName = document.getElementById('colCategory').value || 'Categoria';
+                const safeName = categoryName.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '').replace(/\s+/g, '_')
+                    .replace(/^_+|_+$/g, '') || 'Categoria';
+                a.download = `${safeName}.kmz`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+                Swal.fire({
+                    title: '¡KMZ con detalles generado!',
+                    text: `Se exportaron ${totalExported} puntos con ${getSelectedDetails().length} campos configurados para DescriptionField.`,
+                    icon: 'success',
+                    confirmColor: '#059669'
+                });
+            } catch (err) {
+                console.error(err);
+                Swal.fire('Error', 'No se pudo generar el KMZ.', 'error');
+            }
+        }
+    </script>
+</body>
+</html>
